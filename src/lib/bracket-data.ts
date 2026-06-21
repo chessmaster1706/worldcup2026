@@ -55,17 +55,105 @@ export const ROUND_SHORT: Record<Round, string> = {
 }
 
 // Resolve a slot label (e.g. '1A', '2F', '3E') to a team name if confirmed, else null
+// This is the INITIAL resolver — uses only confirmed group winners from static standings.
+// For live updates after drag-and-drop, use `applyStandingsToBracket` with the store's resolver.
 function resolveSlot(slot: string): string | null {
-  // Only group winners with status 'qualified' are confirmed
-  // 1A = group A winner, 1B = group B winner, etc.
+  // Only group winners with status 'qualified' are confirmed at initial load
   const match = slot.match(/^([123])([A-L])$/)
   if (!match) return null
   const [, position, group] = match
   if (position === '1') {
     return getConfirmedWinner(group)
   }
-  // Runners-up and 3rd-place teams are not yet confirmed
   return null
+}
+
+// Slot definitions for R32 matches (structure only — no team names)
+// This is the FIFA-published 2026 World Cup bracket structure
+interface R32SlotDef {
+  id: string
+  side: 'left' | 'right'
+  pos: number
+  slot1: string
+  slot2: string
+}
+
+export const LEFT_R32_SLOTS: R32SlotDef[] = [
+  { id: 'r32-L-1', side: 'left', pos: 1, slot1: '1A', slot2: DEFAULT_SCENARIO.assignments['1A'] },
+  { id: 'r32-L-2', side: 'left', pos: 2, slot1: '2A', slot2: '2B' },
+  { id: 'r32-L-3', side: 'left', pos: 3, slot1: '1C', slot2: WINNERS_VS_RUNNERUP['1C'] },
+  { id: 'r32-L-4', side: 'left', pos: 4, slot1: '1B', slot2: DEFAULT_SCENARIO.assignments['1B'] },
+  { id: 'r32-L-5', side: 'left', pos: 5, slot1: '1D', slot2: DEFAULT_SCENARIO.assignments['1D'] },
+  { id: 'r32-L-6', side: 'left', pos: 6, slot1: '2C', slot2: '2D' },
+  { id: 'r32-L-7', side: 'left', pos: 7, slot1: '1E', slot2: DEFAULT_SCENARIO.assignments['1E'] },
+  { id: 'r32-L-8', side: 'left', pos: 8, slot1: '1G', slot2: DEFAULT_SCENARIO.assignments['1G'] },
+]
+
+export const RIGHT_R32_SLOTS: R32SlotDef[] = [
+  { id: 'r32-R-1', side: 'right', pos: 1, slot1: '1F', slot2: WINNERS_VS_RUNNERUP['1F'] },
+  { id: 'r32-R-2', side: 'right', pos: 2, slot1: '2H', slot2: '2I' },
+  { id: 'r32-R-3', side: 'right', pos: 3, slot1: '1H', slot2: WINNERS_VS_RUNNERUP['1H'] },
+  { id: 'r32-R-4', side: 'right', pos: 4, slot1: '1I', slot2: DEFAULT_SCENARIO.assignments['1I'] },
+  { id: 'r32-R-5', side: 'right', pos: 5, slot1: '2J', slot2: '2L' },
+  { id: 'r32-R-6', side: 'right', pos: 6, slot1: '1J', slot2: WINNERS_VS_RUNNERUP['1J'] },
+  { id: 'r32-R-7', side: 'right', pos: 7, slot1: '1K', slot2: DEFAULT_SCENARIO.assignments['1K'] },
+  { id: 'r32-R-8', side: 'right', pos: 8, slot1: '1L', slot2: DEFAULT_SCENARIO.assignments['1L'] },
+]
+
+// Apply live standings to an existing bracket's R32 matches.
+// - `resolver` is a function that maps slot labels to team names (from the store).
+// - Only updates R32 matches; preserves winners and downstream teams where possible.
+// - If a slot's team changes and the old team was a winner, the winner is cleared
+//   (along with downstream occurrences) — but manual overrides via the bracket's
+//   edit feature are preserved via the store's override mechanism.
+export function applyStandingsToBracket(
+  matches: Match[],
+  resolver: (slot: string) => string | null,
+): Match[] {
+  const next = matches.map((m) => ({ ...m }))
+  const allR32 = [...LEFT_R32_SLOTS, ...RIGHT_R32_SLOTS]
+
+  for (const def of allR32) {
+    const idx = next.findIndex((m) => m.id === def.id)
+    if (idx === -1) continue
+
+    const match = next[idx]
+    const newTeam1 = resolver(def.slot1)
+    const newTeam2 = resolver(def.slot2)
+
+    // If team1 changed and the old name was the winner, we need to clear downstream
+    if (match.team1 !== newTeam1) {
+      if (match.winner === match.team1 && match.team1 !== null) {
+        clearDownstream(next, match.id)
+      }
+      next[idx] = { ...next[idx], team1: newTeam1 }
+      // If winner was the old team, clear it (clearDownstream already did)
+      if (next[idx].winner === match.team1) {
+        next[idx].winner = null
+      }
+    }
+
+    if (match.team2 !== newTeam2) {
+      if (match.winner === match.team2 && match.team2 !== null) {
+        clearDownstream(next, match.id)
+      }
+      next[idx] = { ...next[idx], team2: newTeam2 }
+      if (next[idx].winner === match.team2) {
+        next[idx].winner = null
+      }
+    }
+
+    // Re-propagate winner to next match if it exists
+    const updated = next[idx]
+    if (updated.winner && updated.nextMatchId && updated.nextSlot) {
+      const nextIdx = next.findIndex((m) => m.id === updated.nextMatchId)
+      if (nextIdx !== -1) {
+        next[nextIdx] = { ...next[nextIdx], [updated.nextSlot]: updated.winner }
+      }
+    }
+  }
+
+  return next
 }
 
 // Build the 31-match bracket with proper progression links
@@ -185,4 +273,29 @@ export function getMatchById(matches: Match[], id: string): Match | undefined {
 export function getChampion(matches: Match[]): string | null {
   const final = getMatchById(matches, 'final-1')
   return final?.winner ?? null
+}
+
+// Helper: recursively clear winners downstream from a match
+// Used when a team is removed/changed and was previously the winner
+export function clearDownstream(matches: Match[], matchId: string): void {
+  const match = matches.find((m) => m.id === matchId)
+  if (!match) return
+
+  const idx = matches.findIndex((m) => m.id === matchId)
+  if (idx !== -1) {
+    matches[idx] = { ...matches[idx], winner: null }
+  }
+
+  if (match.nextMatchId && match.nextSlot) {
+    const nextIdx = matches.findIndex((m) => m.id === match.nextMatchId)
+    if (nextIdx !== -1) {
+      const nextMatch = matches[nextIdx]
+      matches[nextIdx] = {
+        ...nextMatch,
+        [match.nextSlot]: null,
+        winner: null,
+      }
+      clearDownstream(matches, nextMatch.id)
+    }
+  }
 }
