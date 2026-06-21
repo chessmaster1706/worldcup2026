@@ -241,14 +241,14 @@ export function KnockoutBracket() {
         <div className="mx-auto flex max-w-[1900px] items-center justify-center gap-2 px-4 py-2 text-center">
           <Info className="h-3.5 w-3.5 shrink-0 text-sky-400" />
           <p className="text-[11px] text-slate-400">
-            <span className="font-semibold text-slate-300">3rd-place scenario #{DEFAULT_SCENARIO.id}:</span>{' '}
+            <span className="font-semibold text-slate-300">FIFA R32 schedule (M73-M88) · 3rd-place scenario #{DEFAULT_SCENARIO.id}:</span>{' '}
             3rd-placed teams from groups{' '}
             <span className="font-semibold text-amber-300">
               {DEFAULT_SCENARIO.advancingGroups.join(', ')}
             </span>{' '}
-            advance to R32. Group winners{' '}
+            advance. Group winners{' '}
             <span className="text-slate-300">A, B, D, E, G, I, K, L</span> play 3rd-place teams;{' '}
-            <span className="text-slate-300">C, F, H, J</span> play runners-up.
+            <span className="text-slate-300">C, F, H, J</span> play runners-up; 4 matches are runner-up vs runner-up.
           </p>
         </div>
       </div>
@@ -336,7 +336,7 @@ export function KnockoutBracket() {
             <span className="font-semibold text-slate-400">How to play:</span> Drag teams in the group grid above to reorder — positions 1 and 2 auto-fill the bracket. Click a team to advance them; hover a decided match and click <span className="text-amber-400">reset</span> to undo. Click the pencil icon on any slot to override the auto-resolved name.
           </p>
           <p className="text-[10px] text-slate-600">
-            32 teams · 31 matches · 12 groups · 8 best 3rd-placed teams advance · Scenario #{DEFAULT_SCENARIO.id} of 495
+            32 teams · 31 matches · FIFA R32 schedule (M73-M88) · 12 groups · 8 best 3rd-placed teams advance · Scenario #{DEFAULT_SCENARIO.id} of 495
           </p>
         </div>
       </div>

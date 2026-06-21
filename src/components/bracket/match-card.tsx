@@ -34,7 +34,7 @@ export function MatchCard({ match, onPickWinner, onResetMatch, onEditTeam, isCha
       {/* Match label header */}
       <div className="flex items-center justify-between border-b border-white/10 bg-white/5 px-2 py-1">
         <span className="text-[9px] font-bold uppercase tracking-widest text-slate-400">
-          {ROUND_SHORT[match.round]} · {match.side === 'left' ? 'L' : match.side === 'right' ? 'R' : 'F'}{match.position}
+          {match.fifaMatchNumber ? `M${match.fifaMatchNumber} · ` : ''}{ROUND_SHORT[match.round]} · {match.side === 'left' ? 'L' : match.side === 'right' ? 'R' : 'F'}{match.position}
         </span>
         {match.winner && (
           <button
@@ -55,6 +55,7 @@ export function MatchCard({ match, onPickWinner, onResetMatch, onEditTeam, isCha
           slot="team1"
           label={match.team1}
           slotLabel={match.slot1}
+          slotConstraint={match.slot1Constraint}
           isWinner={match.winner === match.team1 && match.team1 !== null}
           isLoser={match.winner !== null && match.winner !== match.team1 && match.team1 !== null}
           canPick={match.team1 !== null && match.winner !== match.team1}
@@ -67,6 +68,7 @@ export function MatchCard({ match, onPickWinner, onResetMatch, onEditTeam, isCha
           slot="team2"
           label={match.team2}
           slotLabel={match.slot2}
+          slotConstraint={match.slot2Constraint}
           isWinner={match.winner === match.team2 && match.team2 !== null}
           isLoser={match.winner !== null && match.winner !== match.team2 && match.team2 !== null}
           canPick={match.team2 !== null && match.winner !== match.team2}
@@ -83,6 +85,7 @@ interface TeamRowProps {
   slot: 'team1' | 'team2'
   label: string | null
   slotLabel?: string
+  slotConstraint?: string
   isWinner: boolean
   isLoser: boolean
   canPick: boolean
@@ -92,7 +95,7 @@ interface TeamRowProps {
   matchId: string
 }
 
-function TeamRow({ slot, label, slotLabel, isWinner, isLoser, canPick, compact, onPick, onEdit, matchId }: TeamRowProps) {
+function TeamRow({ slot, label, slotLabel, slotConstraint, isWinner, isLoser, canPick, compact, onPick, onEdit, matchId }: TeamRowProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(label ?? '')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -182,12 +185,18 @@ function TeamRow({ slot, label, slotLabel, isWinner, isLoser, canPick, compact, 
           </span>
         ) : (
           <span className="text-slate-500 italic text-xs">
-            {slotLabel ?? 'TBD'}
+            {slotConstraint ?? slotLabel ?? 'TBD'}
           </span>
         )}
         {slotLabel && (
-          <span className="text-[8px] uppercase tracking-wider text-slate-600 leading-none mt-0.5">
+          <span
+            className="text-[8px] uppercase tracking-wider text-slate-600 leading-none mt-0.5"
+            title={slotConstraint ? `Eligible: ${slotConstraint}` : undefined}
+          >
             {slotLabel}
+            {slotConstraint && !label && (
+              <span className="text-slate-700 normal-case tracking-normal"> · {slotConstraint}</span>
+            )}
           </span>
         )}
       </div>

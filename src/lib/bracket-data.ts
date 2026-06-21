@@ -7,15 +7,29 @@
 //   RIGHT side: 8 R32 matches → 4 R16 → 2 QF → 1 SF
 //   Final at center: left SF winner vs right SF winner
 //
-// R32 match composition (based on FIFA's published bracket + CSV scenario):
-//   - 8 matches: group winner vs 3rd-place team
-//       (1A, 1B, 1D, 1E, 1G, 1I, 1K, 1L play 3rd-place teams)
-//   - 4 matches: group winner vs runner-up
-//       (1C vs 2F, 1F vs 2E, 1H vs 2G, 1J vs 2K)
-//   - 4 matches: runner-up vs runner-up
-//       (2A vs 2B, 2C vs 2D, 2H vs 2I, 2J vs 2L)
+// === FIFA OFFICIAL R32 SCHEDULE (Match 73-88) ===
+//
+// LEFT side (matches 73-80, feeding R16-L-1..4):
+//   M73 (r32-L-1): 2A vs 2B            → R16-L-1
+//   M74 (r32-L-2): 1E vs 3rd(A/B/C/D/F)→ R16-L-1
+//   M75 (r32-L-3): 1F vs 2C            → R16-L-2
+//   M76 (r32-L-4): 1C vs 2F            → R16-L-2
+//   M77 (r32-L-5): 1I vs 3rd(C/D/F/G/H)→ R16-L-3
+//   M78 (r32-L-6): 2E vs 2I            → R16-L-3
+//   M79 (r32-L-7): 1A vs 3rd(C/E/F/H/I)→ R16-L-4
+//   M80 (r32-L-8): 1L vs 3rd(E/H/I/J/K)→ R16-L-4
+//
+// RIGHT side (matches 81-88, feeding R16-R-1..4):
+//   M81 (r32-R-1): 1D vs 3rd(B/E/F/I/J)→ R16-R-1
+//   M82 (r32-R-2): 1G vs 3rd(A/E/H/I/J)→ R16-R-1
+//   M83 (r32-R-3): 2K vs 2L            → R16-R-2
+//   M84 (r32-R-4): 1H vs 2J            → R16-R-2
+//   M85 (r32-R-5): 1B vs 3rd(E/F/G/I/J)→ R16-R-3
+//   M86 (r32-R-6): 1J vs 2H            → R16-R-3
+//   M87 (r32-R-7): 1K vs 3rd(D/E/I/J/L)→ R16-R-4
+//   M88 (r32-R-8): 2D vs 2G            → R16-R-4
 
-import { DEFAULT_SCENARIO, WINNERS_VS_RUNNERUP, RUNNERUP_VS_RUNNERUP } from './third-place-scenarios'
+import { DEFAULT_SCENARIO, WINNERS_VS_RUNNERUP, RUNNERUP_VS_RUNNERUP, THIRD_PLACE_CONSTRAINTS } from './third-place-scenarios'
 import { getConfirmedWinner } from './group-standings'
 
 export type Round = 'r32' | 'r16' | 'qf' | 'sf' | 'final'
@@ -36,6 +50,11 @@ export interface Match {
   // Used to show the group-stage slot the team comes from
   slot1?: string
   slot2?: string
+  // FIFA match number (73-88 for R32) — for display
+  fifaMatchNumber?: number
+  // Human-readable constraint for 3rd-place slots, e.g. "Best 3rd of A/B/C/D/F"
+  slot1Constraint?: string
+  slot2Constraint?: string
 }
 
 export const ROUND_LABELS: Record<Round, string> = {
@@ -68,36 +87,67 @@ function resolveSlot(slot: string): string | null {
   return null
 }
 
-// Slot definitions for R32 matches (structure only — no team names)
-// This is the FIFA-published 2026 World Cup bracket structure
+// Slot definitions for R32 matches (FIFA official schedule)
+// Structure only — team names are filled in by applyStandingsToBracket + the store's resolver
 interface R32SlotDef {
   id: string
   side: 'left' | 'right'
   pos: number
   slot1: string
   slot2: string
+  fifaMatchNumber: number
+  // Optional constraint label for 3rd-place slots, e.g. "3rd(A/B/C/D/F)"
+  slot1Constraint?: string
+  slot2Constraint?: string
 }
 
+// Helper to format the 3rd-place constraint label
+function thirdLabel(winnerSlot: string): string | undefined {
+  const groups = THIRD_PLACE_CONSTRAINTS[winnerSlot]
+  if (!groups) return undefined
+  return `3rd(${groups.join('/')})`
+}
+
+// LEFT side — FIFA matches 73-80
+// Pairing: (73,74)→R16-L-1, (75,76)→R16-L-2, (77,78)→R16-L-3, (79,80)→R16-L-4
 export const LEFT_R32_SLOTS: R32SlotDef[] = [
-  { id: 'r32-L-1', side: 'left', pos: 1, slot1: '1A', slot2: DEFAULT_SCENARIO.assignments['1A'] },
-  { id: 'r32-L-2', side: 'left', pos: 2, slot1: '2A', slot2: '2B' },
-  { id: 'r32-L-3', side: 'left', pos: 3, slot1: '1C', slot2: WINNERS_VS_RUNNERUP['1C'] },
-  { id: 'r32-L-4', side: 'left', pos: 4, slot1: '1B', slot2: DEFAULT_SCENARIO.assignments['1B'] },
-  { id: 'r32-L-5', side: 'left', pos: 5, slot1: '1D', slot2: DEFAULT_SCENARIO.assignments['1D'] },
-  { id: 'r32-L-6', side: 'left', pos: 6, slot1: '2C', slot2: '2D' },
-  { id: 'r32-L-7', side: 'left', pos: 7, slot1: '1E', slot2: DEFAULT_SCENARIO.assignments['1E'] },
-  { id: 'r32-L-8', side: 'left', pos: 8, slot1: '1G', slot2: DEFAULT_SCENARIO.assignments['1G'] },
+  // M73: 2A vs 2B
+  { id: 'r32-L-1', side: 'left', pos: 1, fifaMatchNumber: 73, slot1: '2A', slot2: '2B' },
+  // M74: 1E vs 3rd(A/B/C/D/F)
+  { id: 'r32-L-2', side: 'left', pos: 2, fifaMatchNumber: 74, slot1: '1E', slot2: DEFAULT_SCENARIO.assignments['1E'], slot2Constraint: thirdLabel('1E') },
+  // M75: 1F vs 2C
+  { id: 'r32-L-3', side: 'left', pos: 3, fifaMatchNumber: 75, slot1: '1F', slot2: WINNERS_VS_RUNNERUP['1F'] },
+  // M76: 1C vs 2F
+  { id: 'r32-L-4', side: 'left', pos: 4, fifaMatchNumber: 76, slot1: '1C', slot2: WINNERS_VS_RUNNERUP['1C'] },
+  // M77: 1I vs 3rd(C/D/F/G/H)
+  { id: 'r32-L-5', side: 'left', pos: 5, fifaMatchNumber: 77, slot1: '1I', slot2: DEFAULT_SCENARIO.assignments['1I'], slot2Constraint: thirdLabel('1I') },
+  // M78: 2E vs 2I
+  { id: 'r32-L-6', side: 'left', pos: 6, fifaMatchNumber: 78, slot1: '2E', slot2: '2I' },
+  // M79: 1A vs 3rd(C/E/F/H/I)
+  { id: 'r32-L-7', side: 'left', pos: 7, fifaMatchNumber: 79, slot1: '1A', slot2: DEFAULT_SCENARIO.assignments['1A'], slot2Constraint: thirdLabel('1A') },
+  // M80: 1L vs 3rd(E/H/I/J/K)
+  { id: 'r32-L-8', side: 'left', pos: 8, fifaMatchNumber: 80, slot1: '1L', slot2: DEFAULT_SCENARIO.assignments['1L'], slot2Constraint: thirdLabel('1L') },
 ]
 
+// RIGHT side — FIFA matches 81-88
+// Pairing: (81,82)→R16-R-1, (83,84)→R16-R-2, (85,86)→R16-R-3, (87,88)→R16-R-4
 export const RIGHT_R32_SLOTS: R32SlotDef[] = [
-  { id: 'r32-R-1', side: 'right', pos: 1, slot1: '1F', slot2: WINNERS_VS_RUNNERUP['1F'] },
-  { id: 'r32-R-2', side: 'right', pos: 2, slot1: '2H', slot2: '2I' },
-  { id: 'r32-R-3', side: 'right', pos: 3, slot1: '1H', slot2: WINNERS_VS_RUNNERUP['1H'] },
-  { id: 'r32-R-4', side: 'right', pos: 4, slot1: '1I', slot2: DEFAULT_SCENARIO.assignments['1I'] },
-  { id: 'r32-R-5', side: 'right', pos: 5, slot1: '2J', slot2: '2L' },
-  { id: 'r32-R-6', side: 'right', pos: 6, slot1: '1J', slot2: WINNERS_VS_RUNNERUP['1J'] },
-  { id: 'r32-R-7', side: 'right', pos: 7, slot1: '1K', slot2: DEFAULT_SCENARIO.assignments['1K'] },
-  { id: 'r32-R-8', side: 'right', pos: 8, slot1: '1L', slot2: DEFAULT_SCENARIO.assignments['1L'] },
+  // M81: 1D vs 3rd(B/E/F/I/J)
+  { id: 'r32-R-1', side: 'right', pos: 1, fifaMatchNumber: 81, slot1: '1D', slot2: DEFAULT_SCENARIO.assignments['1D'], slot2Constraint: thirdLabel('1D') },
+  // M82: 1G vs 3rd(A/E/H/I/J)
+  { id: 'r32-R-2', side: 'right', pos: 2, fifaMatchNumber: 82, slot1: '1G', slot2: DEFAULT_SCENARIO.assignments['1G'], slot2Constraint: thirdLabel('1G') },
+  // M83: 2K vs 2L
+  { id: 'r32-R-3', side: 'right', pos: 3, fifaMatchNumber: 83, slot1: '2K', slot2: '2L' },
+  // M84: 1H vs 2J
+  { id: 'r32-R-4', side: 'right', pos: 4, fifaMatchNumber: 84, slot1: '1H', slot2: WINNERS_VS_RUNNERUP['1H'] },
+  // M85: 1B vs 3rd(E/F/G/I/J)
+  { id: 'r32-R-5', side: 'right', pos: 5, fifaMatchNumber: 85, slot1: '1B', slot2: DEFAULT_SCENARIO.assignments['1B'], slot2Constraint: thirdLabel('1B') },
+  // M86: 1J vs 2H
+  { id: 'r32-R-6', side: 'right', pos: 6, fifaMatchNumber: 86, slot1: '1J', slot2: WINNERS_VS_RUNNERUP['1J'] },
+  // M87: 1K vs 3rd(D/E/I/J/L)
+  { id: 'r32-R-7', side: 'right', pos: 7, fifaMatchNumber: 87, slot1: '1K', slot2: DEFAULT_SCENARIO.assignments['1K'], slot2Constraint: thirdLabel('1K') },
+  // M88: 2D vs 2G
+  { id: 'r32-R-8', side: 'right', pos: 8, fifaMatchNumber: 88, slot1: '2D', slot2: '2G' },
 ]
 
 // Apply live standings to an existing bracket's R32 matches.
@@ -158,9 +208,9 @@ export function applyStandingsToBracket(
 
 // Build the 31-match bracket with proper progression links
 // Uses DEFAULT_SCENARIO (scenario 1 from the CSV) for 3rd-place assignments
+// R32 matchups follow the FIFA official 2026 World Cup schedule (matches 73-88)
 export function buildInitialBracket(): Match[] {
   const matches: Match[] = []
-  const scenario = DEFAULT_SCENARIO
 
   const make = (
     id: string,
@@ -173,31 +223,22 @@ export function buildInitialBracket(): Match[] {
     team2: string | null = null,
     slot1?: string,
     slot2?: string,
-  ): Match => ({ id, round, side, position, team1, team2, winner: null, nextMatchId, nextSlot, slot1, slot2 })
+    fifaMatchNumber?: number,
+    slot1Constraint?: string,
+    slot2Constraint?: string,
+  ): Match => ({
+    id, round, side, position, team1, team2, winner: null,
+    nextMatchId, nextSlot, slot1, slot2, fifaMatchNumber, slot1Constraint, slot2Constraint,
+  })
 
   // ========================================================================
-  // ROUND OF 32 — 16 matches
+  // ROUND OF 32 — 16 matches (FIFA official schedule, M73-M88)
   // ========================================================================
-  // LEFT side (8 matches, top to bottom):
-  //   L1: 1A vs 3E    L2: 2A vs 2B    L3: 1C vs 2F    L4: 1B vs 3J
-  //   L5: 1D vs 3I    L6: 2C vs 2D    L7: 1E vs 3F    L8: 1G vs 3H
-  //
-  // RIGHT side (8 matches, top to bottom):
-  //   R1: 1F vs 2E    R2: 2H vs 2I    R3: 1H vs 2G    R4: 1I vs 3G
-  //   R5: 2J vs 2L    R6: 1J vs 2K    R7: 1K vs 3L    R8: 1L vs 3K
+  // Pairing into R16:
+  //   LEFT:  (M73,M74)→R16-L-1, (M75,M76)→R16-L-2, (M77,M78)→R16-L-3, (M79,M80)→R16-L-4
+  //   RIGHT: (M81,M82)→R16-R-1, (M83,M84)→R16-R-2, (M85,M86)→R16-R-3, (M87,M88)→R16-R-4
 
-  // LEFT R32
-  const leftR32Slots: Array<{ id: string; pos: number; slot1: string; slot2: string }> = [
-    { id: 'r32-L-1', pos: 1, slot1: '1A', slot2: scenario.assignments['1A'] }, // 1A vs 3E
-    { id: 'r32-L-2', pos: 2, slot1: '2A', slot2: '2B' },
-    { id: 'r32-L-3', pos: 3, slot1: '1C', slot2: WINNERS_VS_RUNNERUP['1C'] }, // 1C vs 2F
-    { id: 'r32-L-4', pos: 4, slot1: '1B', slot2: scenario.assignments['1B'] }, // 1B vs 3J
-    { id: 'r32-L-5', pos: 5, slot1: '1D', slot2: scenario.assignments['1D'] }, // 1D vs 3I
-    { id: 'r32-L-6', pos: 6, slot1: '2C', slot2: '2D' },
-    { id: 'r32-L-7', pos: 7, slot1: '1E', slot2: scenario.assignments['1E'] }, // 1E vs 3F
-    { id: 'r32-L-8', pos: 8, slot1: '1G', slot2: scenario.assignments['1G'] }, // 1G vs 3H
-  ]
-  for (const s of leftR32Slots) {
+  for (const s of LEFT_R32_SLOTS) {
     matches.push(make(
       s.id, 'r32', 'left', s.pos,
       `r16-L-${Math.ceil(s.pos / 2)}`,
@@ -205,21 +246,13 @@ export function buildInitialBracket(): Match[] {
       resolveSlot(s.slot1),
       resolveSlot(s.slot2),
       s.slot1, s.slot2,
+      s.fifaMatchNumber,
+      s.slot1Constraint,
+      s.slot2Constraint,
     ))
   }
 
-  // RIGHT R32
-  const rightR32Slots: Array<{ id: string; pos: number; slot1: string; slot2: string }> = [
-    { id: 'r32-R-1', pos: 1, slot1: '1F', slot2: WINNERS_VS_RUNNERUP['1F'] }, // 1F vs 2E
-    { id: 'r32-R-2', pos: 2, slot1: '2H', slot2: '2I' },
-    { id: 'r32-R-3', pos: 3, slot1: '1H', slot2: WINNERS_VS_RUNNERUP['1H'] }, // 1H vs 2G
-    { id: 'r32-R-4', pos: 4, slot1: '1I', slot2: scenario.assignments['1I'] }, // 1I vs 3G
-    { id: 'r32-R-5', pos: 5, slot1: '2J', slot2: '2L' },
-    { id: 'r32-R-6', pos: 6, slot1: '1J', slot2: WINNERS_VS_RUNNERUP['1J'] }, // 1J vs 2K
-    { id: 'r32-R-7', pos: 7, slot1: '1K', slot2: scenario.assignments['1K'] }, // 1K vs 3L
-    { id: 'r32-R-8', pos: 8, slot1: '1L', slot2: scenario.assignments['1L'] }, // 1L vs 3K
-  ]
-  for (const s of rightR32Slots) {
+  for (const s of RIGHT_R32_SLOTS) {
     matches.push(make(
       s.id, 'r32', 'right', s.pos,
       `r16-R-${Math.ceil(s.pos / 2)}`,
@@ -227,6 +260,9 @@ export function buildInitialBracket(): Match[] {
       resolveSlot(s.slot1),
       resolveSlot(s.slot2),
       s.slot1, s.slot2,
+      s.fifaMatchNumber,
+      s.slot1Constraint,
+      s.slot2Constraint,
     ))
   }
 
