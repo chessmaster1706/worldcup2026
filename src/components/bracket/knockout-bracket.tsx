@@ -2,20 +2,22 @@
 
 import { useState, useCallback, useMemo } from 'react'
 import { cn } from '@/lib/utils'
-import { RotateCcw, Trophy, Zap } from 'lucide-react'
-import type { Match, Round, Side } from '@/lib/bracket-data'
+import { RotateCcw, Trophy, Zap, Info } from 'lucide-react'
+import type { Match, Round, Side, Slot } from '@/lib/bracket-data'
 import {
   buildInitialBracket,
   getChampion,
   ROUND_LABELS,
 } from '@/lib/bracket-data'
+import { DEFAULT_SCENARIO } from '@/lib/third-place-scenarios'
 import { MatchCard } from './match-card'
+import { StandingsPanel } from './standings-panel'
 
-// Compute the CSS grid-row value for a match based on round, side, position
+// Compute the CSS grid-row value for a match based on round, position
 function getGridRow(round: Round, position: number): string {
   switch (round) {
     case 'r32':
-      // 8 matches in 16 rows: each spans 2 rows, starting at odd rows
+      // 8 matches in 16 rows: each spans 2 rows
       return `${2 * position - 1} / ${2 * position + 1}`
     case 'r16':
       // 4 matches in 16 rows: each spans 4 rows
@@ -25,7 +27,6 @@ function getGridRow(round: Round, position: number): string {
       return `${8 * position - 7} / ${8 * position + 1}`
     case 'sf':
     case 'final':
-      // 1 match spanning 16 rows
       return `1 / 17`
   }
 }
@@ -35,16 +36,15 @@ interface SideBracketProps {
   matches: Match[]
   onPickWinner: (matchId: string, team: 'team1' | 'team2') => void
   onResetMatch: (matchId: string) => void
+  onEditTeam: (matchId: string, slot: Slot, name: string) => void
 }
 
-// One side (left or right) of the bracket: R32 → R16 → QF → SF
-function SideBracket({ side, matches, onPickWinner, onResetMatch }: SideBracketProps) {
+function SideBracket({ side, matches, onPickWinner, onResetMatch, onEditTeam }: SideBracketProps) {
   const r32 = matches.filter((m) => m.round === 'r32').sort((a, b) => a.position - b.position)
   const r16 = matches.filter((m) => m.round === 'r16').sort((a, b) => a.position - b.position)
   const qf = matches.filter((m) => m.round === 'qf').sort((a, b) => a.position - b.position)
   const sf = matches.filter((m) => m.round === 'sf').sort((a, b) => a.position - b.position)
 
-  // For right side, reverse the column order so SF is closest to center
   const columns = side === 'left'
     ? [
         { round: 'r32' as Round, title: ROUND_LABELS.r32, items: r32 },
@@ -60,9 +60,9 @@ function SideBracket({ side, matches, onPickWinner, onResetMatch }: SideBracketP
       ]
 
   return (
-    <div className="flex items-stretch gap-3 sm:gap-6">
+    <div className="flex items-stretch gap-2 sm:gap-4">
       {columns.map((col) => (
-        <div key={col.round} className="flex w-[185px] flex-col">
+        <div key={col.round} className="flex w-[200px] flex-col">
           <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">
             {col.title}
           </div>
@@ -80,6 +80,7 @@ function SideBracket({ side, matches, onPickWinner, onResetMatch }: SideBracketP
                   match={m}
                   onPickWinner={onPickWinner}
                   onResetMatch={onResetMatch}
+                  onEditTeam={onEditTeam}
                 />
               </div>
             ))}
@@ -105,22 +106,17 @@ export function KnockoutBracket() {
       const winnerName = match[slot]
       if (!winnerName) return prev
 
-      // If we already had a different winner, clear downstream first
       if (match.winner && match.winner !== winnerName) {
         clearDownstream(next, matchId)
       }
 
-      // Set the new winner
       const updatedMatch = { ...next[idx], winner: winnerName }
       next[idx] = updatedMatch
 
-      // Propagate to next match
       if (updatedMatch.nextMatchId && updatedMatch.nextSlot) {
         const nextIdx = next.findIndex((m) => m.id === updatedMatch.nextMatchId)
         if (nextIdx !== -1) {
           const nextMatch = next[nextIdx]
-          // After clearDownstream, the next match slot may already be null
-          // Set it to the new winner
           next[nextIdx] = {
             ...nextMatch,
             [updatedMatch.nextSlot]: winnerName,
@@ -139,10 +135,50 @@ export function KnockoutBracket() {
       if (idx === -1) return prev
 
       const match = next[idx]
-      // Clear downstream first (next matches that depended on this winner)
       clearDownstream(next, matchId)
-      // Reset this match's winner
       next[idx] = { ...match, winner: null }
+      return next
+    })
+  }, [])
+
+  const editTeam = useCallback((matchId: string, slot: Slot, name: string) => {
+    setMatches((prev) => {
+      const next = prev.map((m) => ({ ...m }))
+      const idx = next.findIndex((m) => m.id === matchId)
+      if (idx === -1) return prev
+
+      const match = next[idx]
+      const oldName = match[slot]
+      const newName = name || null
+
+      // Update the team name
+      next[idx] = { ...match, [slot]: newName }
+
+      // If this team was the winner, propagate the change downstream
+      if (match.winner === oldName && oldName !== null) {
+        // Clear the old winner and set the new name as winner if provided
+        if (newName) {
+          next[idx] = { ...next[idx], winner: newName }
+          // Update the next match slot
+          if (match.nextMatchId && match.nextSlot) {
+            const nextIdx = next.findIndex((m) => m.id === match.nextMatchId)
+            if (nextIdx !== -1) {
+              next[nextIdx] = { ...next[nextIdx], [match.nextSlot]: newName }
+            }
+          }
+        } else {
+          // Name was cleared — clear winner and downstream
+          next[idx] = { ...next[idx], winner: null }
+          if (match.nextMatchId && match.nextSlot) {
+            const nextIdx = next.findIndex((m) => m.id === match.nextMatchId)
+            if (nextIdx !== -1) {
+              clearDownstream(next, match.nextMatchId)
+              next[nextIdx] = { ...next[nextIdx], [match.nextSlot]: null }
+            }
+          }
+        }
+      }
+
       return next
     })
   }, [])
@@ -160,7 +196,7 @@ export function KnockoutBracket() {
 
   return (
     <div className="min-h-screen w-full bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
-      {/* Top bar — Sports broadcast feel */}
+      {/* Top bar */}
       <header className="sticky top-0 z-20 border-b border-amber-500/20 bg-slate-950/95 backdrop-blur-md">
         <div className="mx-auto flex max-w-[1900px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
@@ -195,6 +231,24 @@ export function KnockoutBracket() {
         </div>
       </header>
 
+      {/* Scenario info banner */}
+      <div className="border-b border-white/5 bg-slate-900/50">
+        <div className="mx-auto flex max-w-[1900px] items-center justify-center gap-2 px-4 py-2 text-center">
+          <Info className="h-3.5 w-3.5 shrink-0 text-sky-400" />
+          <p className="text-[11px] text-slate-400">
+            <span className="font-semibold text-slate-300">3rd-place scenario #{DEFAULT_SCENARIO.id}:</span>{' '}
+            3rd-placed teams from groups{' '}
+            <span className="font-semibold text-amber-300">
+              {DEFAULT_SCENARIO.advancingGroups.join(', ')}
+            </span>{' '}
+            advance to R32. Group winners{' '}
+            <span className="text-slate-300">A, B, D, E, G, I, K, L</span> play 3rd-place teams;{' '}
+            <span className="text-slate-300">C, F, H, J</span> play runners-up. Click any{' '}
+            <span className="text-slate-300">TBD</span> slot to fill in a team name as the group stage progresses.
+          </p>
+        </div>
+      </div>
+
       {/* Champion banner */}
       {champion && (
         <div className="border-b border-amber-500/20 bg-gradient-to-r from-amber-500/10 via-amber-400/15 to-amber-500/10">
@@ -211,7 +265,7 @@ export function KnockoutBracket() {
       {/* Bracket */}
       <main className="mx-auto max-w-[1900px] px-4 py-6 sm:px-6">
         <div className="bracket-scroll overflow-x-auto pb-6">
-          <div className="flex min-w-[1500px] items-stretch gap-4 sm:gap-8">
+          <div className="flex min-w-[1700px] items-stretch gap-3 sm:gap-6">
 
             {/* LEFT side */}
             <SideBracket
@@ -219,10 +273,11 @@ export function KnockoutBracket() {
               matches={leftMatches}
               onPickWinner={pickWinner}
               onResetMatch={resetMatch}
+              onEditTeam={editTeam}
             />
 
             {/* FINAL — center */}
-            <div className="flex w-[200px] flex-col">
+            <div className="flex w-[210px] flex-col">
               <div className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.3em] text-amber-400">
                 {ROUND_LABELS.final}
               </div>
@@ -240,6 +295,7 @@ export function KnockoutBracket() {
                       match={finalMatch}
                       onPickWinner={pickWinner}
                       onResetMatch={resetMatch}
+                      onEditTeam={editTeam}
                       isChampion={!!champion}
                     />
                   )}
@@ -253,12 +309,13 @@ export function KnockoutBracket() {
               matches={rightMatches}
               onPickWinner={pickWinner}
               onResetMatch={resetMatch}
+              onEditTeam={editTeam}
             />
 
           </div>
         </div>
 
-        {/* Champion display under final (mobile fallback) */}
+        {/* Champion display */}
         {champion && (
           <div className="mt-6 flex flex-col items-center gap-1.5">
             <Trophy className="h-8 w-8 text-amber-400 drop-shadow-[0_0_12px_rgba(251,191,36,0.6)]" />
@@ -271,14 +328,17 @@ export function KnockoutBracket() {
 
         {/* How to use footer */}
         <div className="mt-8 flex flex-col items-center gap-2 text-center">
-          <p className="text-xs text-slate-500">
-            <span className="font-semibold text-slate-400">How to play:</span> Click a team in any match to advance them to the next round. Hover a decided match and click <span className="text-amber-400">reset</span> to undo.
+          <p className="text-xs text-slate-500 max-w-2xl">
+            <span className="font-semibold text-slate-400">How to play:</span> Click a team to advance them to the next round. Hover a decided match and click <span className="text-amber-400">reset</span> to undo. Click the pencil icon on any <span className="text-slate-300">TBD</span> slot to enter a team name as the group stage progresses. The slot label (e.g. <span className="text-slate-300">1A</span>, <span className="text-slate-300">3E</span>, <span className="text-slate-300">2F</span>) shows where the team comes from.
           </p>
           <p className="text-[10px] text-slate-600">
-            32 teams · 31 matches · Mirror layout — left & right halves meet at the center final
+            32 teams · 31 matches · 12 groups · 8 best 3rd-placed teams advance · Scenario #{DEFAULT_SCENARIO.id} of 495
           </p>
         </div>
       </main>
+
+      {/* Standings panel (collapsible) */}
+      <StandingsPanel />
     </div>
   )
 }
@@ -288,13 +348,11 @@ function clearDownstream(matches: Match[], matchId: string): void {
   const match = matches.find((m) => m.id === matchId)
   if (!match) return
 
-  // Clear this match's winner
   const idx = matches.findIndex((m) => m.id === matchId)
   if (idx !== -1) {
     matches[idx] = { ...matches[idx], winner: null }
   }
 
-  // Clear the team from next match and propagate
   if (match.nextMatchId && match.nextSlot) {
     const nextIdx = matches.findIndex((m) => m.id === match.nextMatchId)
     if (nextIdx !== -1) {
@@ -304,7 +362,6 @@ function clearDownstream(matches: Match[], matchId: string): void {
         [match.nextSlot]: null,
         winner: null,
       }
-      // Recursively clear downstream
       clearDownstream(matches, nextMatch.id)
     }
   }
